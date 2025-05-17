@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSN Cloud Kitchen - Restoran Ekle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/App.css">
+  </head>
+  <body class="bg-gradient-to-br from-[#F8F1E9] to-[#EDEDED] font-sans">
+    <div class="container mx-auto p-4">
+      <header class="kitchen-header">
+        <h1 class="kitchen-title">Restoran Ekle</h1>
+        <button id="back-btn" class="kitchen-nav-button">Geri</button>
+      </header>
+      <div id="restaurant-form" class="form-container">
+        <div class="space-y-4">
+          <div>
+            <label class="form-label">Restoran Adı *</label>
+            <input id="restaurant-name" type="text" class="form-input">
+          </div>
+          <div>
+            <label class="form-label">Restoran Logosu (İsteğe Bağlı, yalnızca .jpg)</label>
+            <img id="logo-preview" src="" alt="Logo Önizleme" class="form-image hidden">
+            <input type="file" id="logo-upload" accept=".jpg" class="form-file-input">
+          </div>
+          <div>
+            <label class="form-label">Kategoriler (İsteğe Bağlı)</label>
+            <div id="categories-list" class="space-y-2 mb-4"></div>
+            <div class="flex space-x-4">
+              <input id="category-entry" type="text" placeholder="Kategori Adı" class="form-input w-full">
+              <button id="add-category-entry" class="form-button add">Ekle</button>
+            </div>
+          </div>
+        </div>
+        <div id="error" class="form-error hidden"></div>
+        <div class="flex justify-end space-x-4 mt-6">
+          <button id="save-btn" class="form-button">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let restaurantData = {
+        name: '',
+        logoBase64: null, // Changed to store base64 string of the image
+        categories: []
+      };
+      const token = localStorage.getItem('kitchenToken');
+
+      if (!token) {
+        console.error('add-restaurant: No token in localStorage, redirecting to /kitchen.html');
+        window.location.href = '/kitchen.html';
+      } else {
+        console.log('add-restaurant: Token found:', token.slice(0, 10) + '...');
+      }
+
+      document.getElementById('back-btn').addEventListener('click', () => {
+        window.location.href = '/kitchen.html?section=menu';
+      });
+
+      // Handle logo upload and preview
+      document.getElementById('logo-upload').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        const logoPreview = document.getElementById('logo-preview');
+        if (file && file.type === 'image/jpeg') {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            restaurantData.logoBase64 = event.target.result;
+            logoPreview.src = event.target.result;
+            logoPreview.classList.remove('hidden');
+            document.getElementById('logo-upload').classList.remove('error-border');
+          };
+          reader.readAsDataURL(file);
+        } else {
+          showError('Lütfen bir .jpg dosyası seçin!');
+          document.getElementById('logo-upload').classList.add('error-border');
+          restaurantData.logoBase64 = null;
+          logoPreview.src = '';
+          logoPreview.classList.add('hidden');
+        }
+      });
+
+      document.getElementById('add-category-entry').addEventListener('click', () => {
+        const category = document.getElementById('category-entry').value.trim();
+
+        if (category) {
+          if (restaurantData.categories.includes(category)) {
+            showError('Bu kategori zaten eklenmiş!');
+            document.getElementById('category-entry').classList.add('error-border');
+            return;
+          }
+          restaurantData.categories.push(category);
+          renderCategoriesList();
+          document.getElementById('category-entry').value = '';
+          document.getElementById('category-entry').classList.remove('error-border');
+        } else {
+          showError('Kategori adı gerekli!');
+          document.getElementById('category-entry').classList.add('error-border');
+        }
+      });
+
+      function renderCategoriesList() {
+        const categoriesList = document.getElementById('categories-list');
+        categoriesList.innerHTML = restaurantData.categories.map((category, index) => `
+          <div class="flex justify-between items-center form-list-item">
+            <span>${category}</span>
+            <button class="form-button delete" onclick="deleteCategory(${index})">Sil</button>
+          </div>
+        `).join('');
+      }
+
+      function deleteCategory(index) {
+        restaurantData.categories.splice(index, 1);
+        renderCategoriesList();
+      }
+
+      document.getElementById('save-btn').addEventListener('click', async () => {
+        restaurantData.name = document.getElementById('restaurant-name').value.trim();
+
+        const restaurantNameInput = document.getElementById('restaurant-name');
+
+        if (!restaurantData.name) {
+          showError('Restoran adı gerekli!');
+          restaurantNameInput.classList.add('error-border');
+          return;
+        }
+
+        const saveBtn = document.getElementById('save-btn');
+        saveBtn.textContent = 'Kaydediliyor...';
+        saveBtn.disabled = true;
+        try {
+          const response = await fetch('/.netlify/functions/add-restaurant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(restaurantData)
+          });
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Bilinmeyen bir hata oluştu');
+          }
+          const result = await response.json();
+          console.log('add-restaurant: Restaurant added successfully:', result.data);
+          window.location.href = '/kitchen.html?section=menu';
+        } catch (error) {
+          console.error('add-restaurant: Save error:', error);
+          showError(`Kaydetme başarısız: ${error.message}`);
+        } finally {
+          saveBtn.textContent = 'Kaydet';
+          saveBtn.disabled = false;
+        }
+      });
+
+      function showError(message) {
+        const errorDiv = document.getElementById('error');
+        const currentErrors = errorDiv.textContent.split('\n').filter(e => e);
+        if (!currentErrors.includes(message)) {
+          currentErrors.push(message);
+          errorDiv.textContent = currentErrors.join('\n');
+          errorDiv.classList.remove('hidden');
+        }
+      }
+    </script>
+  </body>
+</html>

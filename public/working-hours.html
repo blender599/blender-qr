@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSN Cloud Kitchen - Çalışma Saatleri</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/App.css">  </head>
+  <body class="bg-gradient-to-br from-[#F8F1E9] to-[#EDEDED] font-sans">
+    <div class="container mx-auto p-4">
+      <header class="kitchen-header">
+        <h1 class="kitchen-title">Çalışma Saatleri</h1>
+        <button id="back-btn" class="kitchen-nav-button">Geri</button>
+      </header>
+      <div id="hours-form" class="space-y-4"></div>
+      <div class="flex justify-end mt-6">
+        <button id="save-btn" class="form-button">Kaydet</button>
+      </div>
+      <p id="error-msg" class="form-error hidden"></p>
+    </div>
+    <script>
+      const token = localStorage.getItem('kitchenToken');
+      const days = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+
+      if (!token) window.location.href = '/kitchen.html';
+
+      document.getElementById('back-btn').addEventListener('click', () => {
+        window.location.href = '/kitchen.html';
+      });
+
+      async function fetchTimes() {
+        try {
+          const response = await fetch('/.netlify/functions/get-times', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (!response.ok) throw new Error('Fetch failed');
+          const data = await response.json();
+          const times = Array.isArray(data.data) ? data.data : [];
+          renderHours(times);
+        } catch (error) {
+          showError('Saatler yüklenemedi: ' + error.message);
+        }
+      }
+
+      function renderHours(times) {
+        const form = document.getElementById('hours-form');
+        form.innerHTML = days.map(day => {
+          const preData = times.find(t => t.day === `${day}-pre`) || { opening: '', closing: '' };
+          const mainData = times.find(t => t.day === `${day}-main`) || { opening: '09.00', closing: '23.59' };
+          return `
+            <div class="form-container">
+              <h3 class="order-title">${day}</h3>
+              <div class="flex justify-between items-center">
+                <span class="text-gray-800">Gece (Opsiyonel):</span>
+                <div class="flex space-x-4">
+                  <label class="flex items-center">
+                    <span class="form-label mr-2">Açılış:</span>
+                    <input type="time" class="opening-time form-input-time" value="${preData.opening ? formatTimeForInput(preData.opening) : ''}" data-day="${day}-pre">
+                  </label>
+                  <label class="flex items-center">
+                    <span class="form-label mr-2">Kapanış:</span>
+                    <input type="time" class="closing-time form-input-time" value="${preData.closing ? formatTimeForInput(preData.closing) : ''}" data-day="${day}-pre">
+                  </label>
+                </div>
+              </div>
+              <div class="flex justify-between items-center mt-4">
+                <span class="text-gray-800">Gün:</span>
+                <div class="flex space-x-4">
+                  <label class="flex items-center">
+                    <span class="form-label mr-2">Açılış:</span>
+                    <input type="time" class="opening-time form-input-time" value="${formatTimeForInput(mainData.opening)}" data-day="${day}-main">
+                  </label>
+                  <label class="flex items-center">
+                    <span class="form-label mr-2">Kapanış:</span>
+                    <input type="time" class="closing-time form-input-time" value="${formatTimeForInput(mainData.closing)}" data-day="${day}-main">
+                  </label>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function formatTimeForInput(timeStr) {
+        return timeStr.replace('.', ':');
+      }
+
+      function formatTimeForStorage(timeStr) {
+        return timeStr ? timeStr.replace(':', '.') : '';
+      }
+
+      async function saveTimes() {
+        const saveBtn = document.getElementById('save-btn');
+        saveBtn.textContent = 'Kaydediliyor...';
+        saveBtn.disabled = true;
+        try {
+          const updates = [];
+          days.forEach(day => {
+            const preOpening = document.querySelector(`.opening-time[data-day="${day}-pre"]`).value;
+            const preClosing = document.querySelector(`.closing-time[data-day="${day}-pre"]`).value;
+            const mainOpening = document.querySelector(`.opening-time[data-day="${day}-main"]`).value;
+            const mainClosing = document.querySelector(`.closing-time[data-day="${day}-main"]`).value;
+
+            if (preOpening && preClosing) updates.push({ day: `${day}-pre`, opening: formatTimeForStorage(preOpening), closing: formatTimeForStorage(preClosing) });
+            if (mainOpening && mainClosing) updates.push({ day: `${day}-main`, opening: formatTimeForStorage(mainOpening), closing: formatTimeForStorage(mainClosing) });
+          });
+
+          for (const update of updates) {
+            const response = await fetch('/.netlify/functions/update-times', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(update),
+            });
+            if (!response.ok) throw new Error('Update failed for ' + update.day);
+          }
+          showError('Saatler başarıyla kaydedildi!', 'text-green-500');
+          setTimeout(() => window.location.href = '/kitchen.html', 1000);
+        } catch (error) {
+          showError('Kaydetme başarısız: ' + error.message);
+        } finally {
+          saveBtn.textContent = 'Kaydet';
+          saveBtn.disabled = false;
+        }
+      }
+
+      function showError(message, className = 'text-red-500') {
+        const errorMsg = document.getElementById('error-msg');
+        errorMsg.textContent = message;
+        errorMsg.classList.remove('hidden', 'text-red-500', 'text-green-500');
+        errorMsg.classList.add(className);
+        setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+      }
+
+      document.getElementById('save-btn').addEventListener('click', saveTimes);
+      fetchTimes();
+    </script>
+  </body>
+</html>

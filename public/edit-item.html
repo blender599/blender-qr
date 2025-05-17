@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSN Cloud Kitchen - Ürün Düzenle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/App.css">  </head>
+  <body class="bg-gradient-to-br from-[#F8F1E9] to-[#EDEDED] font-sans">
+    <div class="container mx-auto p-4">
+      <header class="kitchen-header">
+        <h1 class="kitchen-title">Ürün Düzenle</h1>
+        <button id="back-btn" class="kitchen-nav-button">Geri</button>
+      </header>
+      <div id="item-form" class="form-container">
+        <div class="flex space-x-6 flex-col md:flex-row">
+          <div class="w-full md:w-1/3">
+            <img id="item-photo" src="" alt="Ürün Fotoğrafı" class="form-image">
+            <input type="file" id="photo-upload" accept=".jpg" class="form-file-input">
+          </div>
+          <div class="w-full md:w-2/3 space-y-4">
+            <div>
+              <label class="form-label">İsim</label>
+              <input id="item-name" type="text" class="form-input">
+            </div>
+            <div>
+              <label class="form-label">Açıklama</label>
+              <textarea id="item-description" class="form-textarea" rows="3"></textarea>
+            </div>
+            <div>
+              <label class="form-label">Fiyat (₺)</label>
+              <input id="item-price" type="number" step="0.01" class="form-input">
+            </div>
+          </div>
+        </div>
+        <div class="mt-6">
+          <label class="form-label mb-2">Seçenekler</label>
+          <div id="options-list" class="space-y-2 mb-4"></div>
+          <div class="flex space-x-4">
+            <select id="option-select" class="form-select w-3/4">
+              <option value="">Seçenek Seç</option>
+            </select>
+            <button id="add-option" class="form-button add">Ekle</button>
+          </div>
+        </div>
+        <div class="mt-6">
+          <label class="form-label mb-2">Alerjenler</label>
+          <div id="allergens-list" class="space-y-2 mb-4"></div>
+          <div class="flex space-x-4">
+            <select id="allergen-select" class="form-select w-3/4">
+              <option value="">Alerjen Seç</option>
+            </select>
+            <button id="add-allergen" class="form-button add">Ekle</button>
+          </div>
+        </div>
+        <div id="error" class="form-error hidden"></div>
+        <div class="flex justify-end space-x-4 mt-6">
+          <button id="save-btn" class="form-button">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let itemData = null;
+      let allOptions = [];
+      let allAllergens = [];
+      const token = localStorage.getItem('kitchenToken');
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const customId = urlParams.get('customId');
+
+      if (!token) {
+        window.location.href = '/kitchen.html';
+      }
+
+      document.getElementById('back-btn').addEventListener('click', () => {
+        window.location.href = '/kitchen.html?section=menu';
+      });
+
+      async function fetchItemAndOptions() {
+        try {
+          const [itemResponse, optionsResponse, allergensResponse] = await Promise.all([
+            fetch(`/.netlify/functions/get-item-by-id?customId=${customId}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            }),
+            fetch('/.netlify/functions/get-options', {
+              headers: { 'Authorization': `Bearer ${token}` },
+            }),
+            fetch('/.netlify/functions/get-allergens', {
+              headers: { 'Authorization': `Bearer ${token}` },
+            }),
+          ]);
+
+          if (!itemResponse.ok) throw new Error('Item fetch failed');
+          if (!optionsResponse.ok) throw new Error('Options fetch failed');
+          if (!allergensResponse.ok) throw new Error('Allergens fetch failed');
+
+          const itemResult = await itemResponse.json();
+          itemData = itemResult.data;
+          console.log('Item data:', itemData);
+
+          allOptions = (await optionsResponse.json()).data;
+          console.log('All options:', allOptions);
+
+          allAllergens = (await allergensResponse.json()).data;
+          console.log('All allergens:', allAllergens);
+
+          document.getElementById('item-photo').src = itemData.image_url;
+          document.getElementById('item-name').value = itemData.name;
+          document.getElementById('item-description').value = itemData.description;
+          document.getElementById('item-price').value = itemData.price;
+
+          const optionSelect = document.getElementById('option-select');
+          optionSelect.innerHTML = '<option value="">Seçenek Seç</option>' +
+            allOptions.map(opt => `<option value="${opt.id}">${opt.name}</option>`).join('');
+
+          const allergenSelect = document.getElementById('allergen-select');
+          allergenSelect.innerHTML = '<option value="">Alerjen Seç</option>' +
+            allAllergens.map(allergen => `<option value="${allergen.id}">${allergen.name}</option>`).join('');
+
+          renderOptions();
+          renderAllergens();
+        } catch (error) {
+          console.error('Fetch error:', error);
+          showError('Veriler yüklenemedi: ' + error.message);
+        }
+      }
+
+      function renderOptions() {
+        const optionsList = document.getElementById('options-list');
+        if (!optionsList || !itemData.option_categories) return;
+
+        optionsList.innerHTML = itemData.option_categories.map(optId => {
+          const option = allOptions.find(opt => opt.id === optId);
+          return option ? `
+            <div class="flex justify-between items-center form-list-item">
+              <span>${option.name}</span>
+              <button class="form-button delete" onclick="deleteOption('${optId}')">Sil</button>
+            </div>
+          ` : `
+            <div class="flex justify-between items-center form-list-item">
+              <span>[Bilinmeyen Seçenek: ${optId}]</span>
+              <button class="form-button delete" onclick="deleteOption('${optId}')">Sil</button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function renderAllergens() {
+        const allergensList = document.getElementById('allergens-list');
+        if (!allergensList || !itemData.allergens) return;
+
+        allergensList.innerHTML = itemData.allergens.map(allergenId => {
+          const allergen = allAllergens.find(a => a.id === allergenId);
+          return allergen ? `
+            <div class="flex justify-between items-center form-list-item">
+              <div class="flex items-center space-x-2">
+                <img src="${allergen.symbol_url}" alt="${allergen.name}" class="w-6 h-6 object-contain">
+                <span>${allergen.name}</span>
+              </div>
+              <button class="form-button delete" onclick="deleteAllergen('${allergenId}')">Sil</button>
+            </div>
+          ` : `
+            <div class="flex justify-between items-center form-list-item">
+              <span>[Bilinmeyen Alerjen: ${allergenId}]</span>
+              <button class="form-button delete" onclick="deleteAllergen('${allergenId}')">Sil</button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function deleteOption(optId) {
+        itemData.option_categories = itemData.option_categories.filter(id => id !== optId);
+        console.log('After delete, option_categories:', itemData.option_categories);
+        renderOptions();
+      }
+
+      function deleteAllergen(allergenId) {
+        itemData.allergens = itemData.allergens.filter(id => id !== allergenId);
+        console.log('After delete, allergens:', itemData.allergens);
+        renderAllergens();
+      }
+
+      document.getElementById('add-option').addEventListener('click', () => {
+        const optionId = document.getElementById('option-select').value;
+        if (optionId && !itemData.option_categories.includes(optionId)) {
+          itemData.option_categories.push(optionId);
+          console.log('After add, option_categories:', itemData.option_categories);
+          renderOptions();
+        }
+      });
+
+      document.getElementById('add-allergen').addEventListener('click', () => {
+        const allergenId = document.getElementById('allergen-select').value;
+        if (allergenId && !itemData.allergens.includes(allergenId)) {
+          itemData.allergens.push(allergenId);
+          console.log('After add, allergens:', itemData.allergens);
+          renderAllergens();
+        }
+      });
+
+      document.getElementById('photo-upload').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file && file.type === 'image/jpeg') {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            document.getElementById('item-photo').src = event.target.result;
+            document.getElementById('photo-upload').classList.remove('error-border');
+          };
+          reader.readAsDataURL(file);
+        } else {
+          showError('Lütfen bir .jpg dosyası seçin!');
+          document.getElementById('photo-upload').classList.add('error-border');
+        }
+      });
+
+      document.getElementById('save-btn').addEventListener('click', async () => {
+        const price = parseFloat(document.getElementById('item-price').value);
+        if (isNaN(price) || price < 0) {
+          showError('Fiyat geçerli bir sayı olmalı!');
+          document.getElementById('item-price').classList.add('error-border');
+          return;
+        }
+
+        itemData.name = document.getElementById('item-name').value;
+        itemData.description = document.getElementById('item-description').value;
+        itemData.price = price;
+        itemData.option_categories = itemData.option_categories || [];
+        itemData.allergens = itemData.allergens || [];
+
+        const fileInput = document.getElementById('photo-upload');
+        if (fileInput.files[0]) {
+          const file = fileInput.files[0];
+          if (file.type !== 'image/jpeg') {
+            showError('Lütfen bir .jpg dosyası seçin!');
+            document.getElementById('photo-upload').classList.add('error-border');
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            itemData.imageBase64 = event.target.result;
+            await saveItem();
+          };
+          reader.readAsDataURL(file);
+        } else {
+          await saveItem();
+        }
+      });
+
+      async function saveItem() {
+        const saveBtn = document.getElementById('save-btn');
+        saveBtn.textContent = 'Kaydediliyor...';
+        saveBtn.disabled = true;
+        try {
+          console.log('Saving itemData:', itemData);
+          const response = await fetch('/.netlify/functions/update-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+              custom_id: itemData.custom_id,
+              name: itemData.name,
+              description: itemData.description,
+              price: itemData.price,
+              imageBase64: itemData.imageBase64 || undefined,
+              option_categories: itemData.option_categories,
+              allergens: itemData.allergens,
+            }),
+          });
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Update failed: ${errorText}`);
+          }
+          console.log('Item updated successfully');
+          window.location.href = '/kitchen.html?section=menu';
+        } catch (error) {
+          console.error('Save error:', error);
+          showError('Kaydetme başarısız: ' + error.message);
+        } finally {
+          saveBtn.textContent = 'Kaydet';
+          saveBtn.disabled = false;
+        }
+      }
+
+      function showError(message) {
+        const errorDiv = document.getElementById('error');
+        const currentErrors = errorDiv.textContent.split('\n').filter(e => e);
+        if (!currentErrors.includes(message)) {
+          currentErrors.push(message);
+          errorDiv.textContent = currentErrors.join('\n');
+          errorDiv.classList.remove('hidden');
+        }
+      }
+
+      fetchItemAndOptions();
+    </script>
+  </body>
+</html>

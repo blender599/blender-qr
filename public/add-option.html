@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSN Cloud Kitchen - Opsiyon Ekle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/App.css">  </head>
+  <body class="bg-gradient-to-br from-[#F8F1E9] to-[#EDEDED] font-sans">
+    <div class="container mx-auto p-4">
+      <header class="kitchen-header">
+        <h1 class="kitchen-title">Opsiyon Ekle</h1>
+        <button id="back-btn" class="kitchen-nav-button">Geri</button>
+      </header>
+      <div id="option-form" class="form-container">
+        <div class="space-y-4">
+          <div>
+            <label class="form-label">İsim</label>
+            <input id="option-name" type="text" class="form-input">
+          </div>
+          <div>
+            <label class="form-label">Seçenekler</label>
+            <div id="options-list" class="space-y-2 mb-4"></div>
+            <div class="flex space-x-4">
+              <input id="option-entry-name" type="text" placeholder="Seçenek Adı" class="w-2/3 form-input">
+              <input id="option-entry-price" type="number" step="0.01" placeholder="Fiyat Ayarı (₺)" class="w-1/3 form-input">
+              <button id="add-option-entry" class="form-button add">Ekle</button>
+            </div>
+          </div>
+          <div>
+            <label class="form-label">Seçim Türü *</label>
+            <select id="choice-type" class="form-select">
+              <option value="" disabled selected>Seçim Türü Seç</option>
+              <option value="single">Tek</option>
+              <option value="multi">Çoklu</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Zorunlu mu? *</label>
+            <select id="is-mandatory" class="form-select">
+              <option value="" disabled selected>Zorunlu mu?</option>
+              <option value="true">Evet</option>
+              <option value="false">Hayır</option>
+            </select>
+          </div>
+        </div>
+        <div id="error" class="form-error hidden"></div>
+        <div class="flex justify-end space-x-4 mt-6">
+          <button id="save-btn" class="form-button">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let optionData = {
+        name: '',
+        options: [],
+        choice_type: '',
+        is_mandatory: null
+      };
+      const token = localStorage.getItem('kitchenToken');
+
+      if (!token) {
+        console.error('add-option: No token in localStorage, redirecting to /kitchen.html');
+        window.location.href = '/kitchen.html';
+      } else {
+        console.log('add-option: Token found:', token.slice(0, 10) + '...');
+      }
+
+      document.getElementById('back-btn').addEventListener('click', () => {
+        window.location.href = '/kitchen.html?section=menu';
+      });
+
+      document.getElementById('add-option-entry').addEventListener('click', () => {
+        const name = document.getElementById('option-entry-name').value.trim();
+        const price = parseFloat(document.getElementById('option-entry-price').value) || 0;
+
+        if (name) {
+          optionData.options.push({ name, priceAdjustment: price });
+          renderOptionsList();
+          document.getElementById('option-entry-name').value = '';
+          document.getElementById('option-entry-price').value = '';
+          document.getElementById('option-entry-name').classList.remove('error-border');
+        } else {
+          showError('Seçenek adı gerekli!');
+          document.getElementById('option-entry-name').classList.add('error-border');
+        }
+      });
+
+      function renderOptionsList() {
+        const optionsList = document.getElementById('options-list');
+        optionsList.innerHTML = optionData.options.map((opt, index) => `
+          <div class="flex justify-between items-center form-list-item">
+            <span>${opt.name} (Fiyat Ayarı: ${opt.priceAdjustment}₺)</span>
+            <button class="form-button delete" onclick="deleteOption(${index})">Sil</button>
+          </div>
+        `).join('');
+      }
+
+      function deleteOption(index) {
+        optionData.options.splice(index, 1);
+        renderOptionsList();
+      }
+
+      document.getElementById('save-btn').addEventListener('click', async () => {
+        optionData.name = document.getElementById('option-name').value;
+        optionData.choice_type = document.getElementById('choice-type').value;
+        optionData.is_mandatory = document.getElementById('is-mandatory').value;
+
+        const choiceTypeSelect = document.getElementById('choice-type');
+        const isMandatorySelect = document.getElementById('is-mandatory');
+
+        if (!optionData.name) {
+          showError('İsim gerekli!');
+          document.getElementById('option-name').classList.add('error-border');
+          return;
+        }
+        if (optionData.options.length === 0) {
+          showError('En az bir seçenek eklenmeli!');
+          return;
+        }
+        if (!optionData.choice_type) {
+          showError('Seçim türü gerekli!');
+          choiceTypeSelect.classList.add('error-border');
+          return;
+        }
+        if (optionData.is_mandatory === null || optionData.is_mandatory === '') {
+          showError('Zorunlu mu? alanı gerekli!');
+          isMandatorySelect.classList.add('error-border');
+          return;
+        }
+
+        const saveBtn = document.getElementById('save-btn');
+        saveBtn.textContent = 'Kaydediliyor...';
+        saveBtn.disabled = true;
+        try {
+          const response = await fetch('/.netlify/functions/add-option', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(optionData)
+          });
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Bilinmeyen bir hata oluştu');
+          }
+          const result = await response.json();
+          console.log('add-option: Option added successfully:', result.data);
+          window.location.href = '/kitchen.html?section=menu';
+        } catch (error) {
+          console.error('add-option: Save error:', error);
+          showError(`Kaydetme başarısız: ${error.message}`);
+        } finally {
+          saveBtn.textContent = 'Kaydet';
+          saveBtn.disabled = false;
+        }
+      });
+
+      function showError(message) {
+        const errorDiv = document.getElementById('error');
+        const currentErrors = errorDiv.textContent.split('\n').filter(e => e);
+        if (!currentErrors.includes(message)) {
+          currentErrors.push(message);
+          errorDiv.textContent = currentErrors.join('\n');
+          errorDiv.classList.remove('hidden');
+        }
+      }
+    </script>
+  </body>
+</html>

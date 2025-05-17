@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSN Cloud Kitchen - Mutfak</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/App.css">  </head>
+  <body class="bg-gradient-to-br from-[#F8F1E9] to-[#EDEDED] font-sans">
+    <div id="login-overlay" class="login-overlay">
+      <div class="login-modal">
+        <h2 class="login-title">Giriş Yap</h2>
+        <input id="username" type="text" placeholder="Kullanıcı Adı" class="login-input"/>
+        <input id="password" type="password" placeholder="Şifre" class="login-input"/>
+        <div id="login-error" class="login-error hidden"></div>
+        <button id="login-btn" class="login-button">Giriş</button>
+      </div>
+    </div>
+    <div id="content" class="container mx-auto p-4 hidden">
+      <header class="kitchen-header">
+        <h1 class="kitchen-title">Mutfak</h1>
+        <div class="kitchen-nav">
+          <button id="orders-btn" class="kitchen-nav-button">Siparişler</button>
+          <button id="menu-btn" class="kitchen-nav-button">Menü</button>
+          <button id="hours-btn" class="kitchen-nav-button">Çalışma Saatleri</button>
+          <button id="completed-btn" class="kitchen-nav-button">Geçmiş Siparişler</button>
+        </div>
+      </header>
+      <div id="orders-section" class="section">
+        <div id="orders"></div>
+      </div>
+      <div id="menu-section" class="section hidden">
+        <div class="menu-controls">
+          <select id="restaurant-select" class="menu-select">
+            <option value="">Tüm Restoranlar</option>
+          </select>
+          <input id="search-bar" type="text" placeholder="Ürün ara..." class="menu-search"/>
+          <div class="menu-add-buttons">
+            <button id="add-item-btn" class="menu-add-button">Ürün Ekle</button>
+            <button id="add-option-btn" class="menu-add-button">Opsiyon Ekle</button>
+            <button id="add-category-btn" class="menu-add-button">Kategori Ekle</button>
+            <button id="add-restaurant-btn" class="menu-add-button">Restoran Ekle</button>
+          </div>
+        </div>
+        <div id="menu-items" class="space-y-4"></div>
+      </div>
+      <audio id="orderSound" src="/sounds/sound.mp3" preload="auto"></audio>
+      <div id="print-area" class="hidden"></div>
+    </div>
+    <script>
+      let token = localStorage.getItem('kitchenToken');
+      let previousOrders = [];
+      let soundInterval = null;
+      let pressedButtons = new Set();
+      let allItems = [];
+      let restaurants = {};
+      let isInitialFetch = true;
+
+      if (token) {
+        showContent();
+      }
+
+      document.getElementById('login-btn').addEventListener('click', async () => {
+        const loginBtn = document.getElementById('login-btn');
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        loginBtn.textContent = 'Yükleniyor...';
+        loginBtn.disabled = true;
+        try {
+          const response = await fetch('/.netlify/functions/auth-kitchen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Login failed');
+          token = data.token;
+          localStorage.setItem('kitchenToken', token);
+          showContent();
+        } catch (error) {
+          document.getElementById('login-error').textContent = error.message;
+          document.getElementById('login-error').classList.remove('hidden');
+        } finally {
+          loginBtn.textContent = 'Giriş';
+          loginBtn.disabled = false;
+        }
+      });
+
+      async function showContent() {
+        try {
+          const response = await fetch('/.netlify/functions/get-orders', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (!response.ok) throw new Error('Token invalid');
+          document.getElementById('login-overlay').classList.add('hidden');
+          document.getElementById('content').classList.remove('hidden');
+          await fetchOrders();
+          await fetchRestaurantsAndItems();
+          setInterval(fetchOrders, 30000);
+          const urlParams = new URLSearchParams(window.location.search);
+          const section = urlParams.get('section');
+          if (section === 'menu') {
+            showMenuSection();
+            renderItems('');
+          }
+        } catch (error) {
+          localStorage.removeItem('kitchenToken');
+          token = null;
+        }
+      }
+
+      function showOrdersSection() {
+        document.getElementById('orders-section').classList.remove('hidden');
+        document.getElementById('menu-section').classList.add('hidden');
+        document.getElementById('orders-btn').classList.add('active');
+        document.getElementById('menu-btn').classList.remove('active');
+      }
+
+      function showMenuSection() {
+        document.getElementById('menu-section').classList.remove('hidden');
+        document.getElementById('orders-section').classList.add('hidden');
+        document.getElementById('menu-btn').classList.add('active');
+        document.getElementById('orders-btn').classList.remove('active');
+      }
+
+      document.getElementById('orders-btn').addEventListener('click', () => {
+        showOrdersSection();
+      });
+
+      document.getElementById('menu-btn').addEventListener('click', () => {
+        showMenuSection();
+        renderItems('');
+      });
+
+      document.getElementById('completed-btn').addEventListener('click', () => {
+        window.location.href = '/completed-orders.html';
+      });
+
+      document.getElementById('hours-btn').addEventListener('click', () => {
+        window.location.href = '/working-hours.html';
+      });
+
+      document.getElementById('add-item-btn').addEventListener('click', () => {
+        window.location.href = '/add-item.html';
+      });
+      document.getElementById('add-option-btn').addEventListener('click', () => {
+        window.location.href = '/add-option.html';
+      });
+      document.getElementById('add-category-btn').addEventListener('click', () => {
+        window.location.href = '/add-category.html';
+      });
+      document.getElementById('add-restaurant-btn').addEventListener('click', () => {
+        window.location.href = '/add-restaurant.html';
+      });
+
+      async function fetchOrders() {
+        try {
+          const response = await fetch('/.netlify/functions/get-orders', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const responseText = await response.text();
+          if (!response.ok) throw new Error(`Fetch failed: ${response.status} - ${responseText}`);
+          const responseData = JSON.parse(responseText);
+          const allOrders = responseData.data || [];
+          const orders = allOrders.filter(order => order.status === 'pending' || order.status === 'active');
+
+          const ordersDiv = document.getElementById('orders');
+          if (!ordersDiv) return;
+
+          ordersDiv.innerHTML = orders.map(order => {
+            const isPressed = pressedButtons.has(order.id);
+            const displayStatus = order.status === 'pending' ? 'Yeni Sipariş' : order.status === 'active' ? 'Aktif' : order.status;
+            return `
+              <div class="order-card ${order.status === 'pending' ? 'animate-pulse' : ''}" data-order-id="${order.id}">
+                <h3 class="order-title">Sipariş No: ${order.id}</h3>
+                <p class="order-detail"><strong>Tür:</strong> ${order.order_type === 'Takeout' ? 'Paket Servis' : 'Restorantta'}</p>
+                ${order.order_type === 'Dine In' && order.table_number ? `
+                  <p class="order-detail"><strong>Masa No:</strong> ${order.table_number}</p>
+                ` : ''}
+                ${order.order_type === 'Takeout' && order.takeout_option ? `
+                  <p class="order-detail"><strong>Seçenek:</strong> ${order.takeout_option === 'Delivery' ? 'Teslimat' : 'Restorandan Alım'}</p>
+                  ${order.takeout_option === 'Delivery' ? `
+                    <p class="order-detail"><strong>Adres:</strong> ${order.address || 'N/A'}</p>
+                    ${order.additional_info ? `
+                      <p class="order-detail"><strong>Ek Bilgi:</strong> ${order.additional_info}</p>
+                    ` : ''}
+                    <p class="order-detail"><strong>Telefon:</strong> ${order.phone || 'N/A'}</p>
+                    <p class="order-detail"><strong>İsim:</strong> ${order.name || 'N/A'}</p>
+                    <p class="order-detail"><strong>Ödeme:</strong> ${order.payment_method === 'Cash' ? 'Nakit' : 'Kredi Kartı'}</p>
+                  ` : ''}
+                ` : ''}
+                <p class="order-detail"><strong>Ürünler:</strong></p>
+                <ul class="order-list">
+                  ${order.items.map(item => `
+                    <li class="order-list-item">${item.item} (${item.options || 'Seçim yok'}) - ${item.price}₺
+                      ${item.note ? `<br><span class="text-gray-600 text-sm">Not: ${item.note}</span>` : ''}
+                    </li>
+                  `).join('')}
+                </ul>
+                <p class="order-detail"><strong>Durum:</strong> ${displayStatus}</p>
+                <div class="order-actions">
+                  <button onclick="updateOrder('${order.id}', 'Aktif', this)" class="action-button aktify ${isPressed || order.status !== 'pending' ? 'disabled' : ''}" ${isPressed || order.status !== 'pending' ? 'disabled' : ''} data-order-id="${order.id}">Aktif</button>
+                  <button onclick="updateOrder('${order.id}', 'Tamamlandı', this)" class="action-button complete" data-order-id="${order.id}">Tamamlandı</button>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          if (!isInitialFetch) {
+            manageSound(orders);
+          }
+          previousOrders = orders;
+          isInitialFetch = false;
+          return orders;
+        } catch (error) {
+          console.error('Fetch error:', error);
+          const ordersDiv = document.getElementById('orders');
+          if (ordersDiv) ordersDiv.innerHTML = `<p class="text-red-600">Siparişler yüklenemedi: ${error.message}</p>`;
+          return [];
+        }
+      }
+
+      async function fetchRestaurantsAndItems() {
+        try {
+          const restaurantsResponse = await fetch('/.netlify/functions/get-restaurants', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const restaurantsText = await restaurantsResponse.text();
+          if (!restaurantsResponse.ok) throw new Error(`Restaurants fetch failed: ${restaurantsResponse.status}`);
+          const restaurantsData = JSON.parse(restaurantsText);
+          restaurants = restaurantsData.data.reduce((acc, r) => {
+            acc[r.restaurant_id] = r.name;
+            return acc;
+          }, {});
+
+          const restaurantSelect = document.getElementById('restaurant-select');
+          restaurantSelect.innerHTML = `<option value="">Tüm Restoranlar</option>` +
+            Object.entries(restaurants).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+
+          const itemsResponse = await fetch('/.netlify/functions/get-items', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const itemsText = await itemsResponse.text();
+          if (!itemsResponse.ok) throw new Error(`Items fetch failed: ${itemsResponse.status}`);
+          const itemsData = JSON.parse(itemsText);
+          allItems = itemsData.data || [];
+
+          restaurantSelect.addEventListener('change', () => renderItems(restaurantSelect.value));
+          document.getElementById('search-bar').addEventListener('input', (e) => renderItems(document.getElementById('restaurant-select').value, e.target.value));
+        } catch (error) {
+          console.error('Fetch error:', error);
+          document.getElementById('menu-items').innerHTML = `<p class="text-red-600">Menü yüklenemedi: ${error.message}</p>`;
+        }
+      }
+
+      function renderItems(restaurantId, searchTerm = '') {
+        const menuItemsDiv = document.getElementById('menu-items');
+        if (!allItems || allItems.length === 0) {
+          menuItemsDiv.innerHTML = '<p class="text-gray-500 animate-pulse">Yükleniyor...</p>';
+          return;
+        }
+        const filteredItems = allItems
+          .filter(item => {
+            if (!restaurantId) return true;
+            return Number(item.restaurant_id) === Number(restaurantId);
+          })
+          .filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (filteredItems.length === 0) {
+          menuItemsDiv.innerHTML = '<p class="text-gray-500">Ürün bulunamadı.</p>';
+          return;
+        }
+
+        menuItemsDiv.innerHTML = filteredItems.map(item => `
+          <div class="menu-item-card">
+            <span class="menu-item-name">${item.name}</span>
+            <div class="menu-item-actions">
+              <button class="menu-item-edit" onclick="editItem('${item.custom_id}')">Düzenle</button>
+              <label style="display: flex; align-items: center;">
+                <input type="checkbox" style="display: none;" ${item.available ? 'checked' : ''} onclick="toggleAvailability('${item.custom_id}', this.checked)">
+                <div style="position: relative; width: 36px; height: 20px; background-color: ${item.available ? '#22C55E' : '#EF4444'}; border-radius: 9999px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                  <div style="position: absolute; top: 2px; left: ${item.available ? '20px' : '2px'}; width: 16px; height: 16px; background-color: white; border-radius: 50%; transition: all 0.3s ease; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);"></div>
+                </div>
+              </label>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      function editItem(customId) {
+        window.location.href = `/edit-item.html?customId=${customId}`;
+      }
+
+      async function toggleAvailability(customId, available) {
+        try {
+          const response = await fetch('/.netlify/functions/update-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ custom_id: customId, available }),
+          });
+          const responseText = await response.text();
+          if (!response.ok) {
+            if (response.status === 404) {
+              const item = allItems.find(i => i.custom_id === customId);
+              if (item) {
+                item.available = available;
+                renderItems(document.getElementById('restaurant-select').value);
+                return;
+              }
+            }
+            throw new Error(`Update failed: ${response.status} - ${responseText}`);
+          }
+          const itemsResponse = await fetch('/.netlify/functions/get-items', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          allItems = (await itemsResponse.json()).data || [];
+          renderItems(document.getElementById('restaurant-select').value);
+        } catch (error) {
+          console.error('Toggle error:', error);
+          alert('Durum güncellenemedi: ' + error.message);
+        }
+      }
+
+      function manageSound(orders) {
+        const audio = document.getElementById('orderSound');
+        if (!audio) return;
+
+        const newPendingOrders = orders.filter(order => 
+          order.status === 'pending' && 
+          !previousOrders.some(prev => prev.id === order.id)
+        );
+
+        if (newPendingOrders.length > 0 && !soundInterval) {
+          audio.play().then(() => {
+            soundInterval = setInterval(() => {
+              if (audio.paused) audio.play().catch(e => console.error('Replay error:', e));
+            }, 5000);
+          }).catch(e => console.error('Play error:', e));
+        } else if (!orders.some(order => order.status === 'pending') && soundInterval) {
+          audio.pause();
+          audio.currentTime = 0;
+          clearInterval(soundInterval);
+          soundInterval = null;
+        }
+      }
+
+      async function updateOrder(orderId, status, button) {
+        if (button.disabled) return;
+        button.disabled = true;
+        console.log('Updating order:', { orderId, status });
+        try {
+          const response = await fetch('/.netlify/functions/update-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ id: orderId, status }),
+          });
+          const responseText = await response.text();
+          console.log('Update response:', responseText);
+          if (!response.ok) throw new Error(`Update failed: ${response.status} - ${responseText}`);
+          if (status === 'Aktif') {
+            pressedButtons.add(orderId);
+            button.classList.add('disabled');
+            const updatedOrders = await fetchOrders();
+            const updatedOrder = updatedOrders.find(o => Number(o.id) === Number(orderId));
+            if (updatedOrder) printOrder(orderId);
+          } else if (status === 'Tamamlandı') {
+            button.classList.add('disabled');
+            await fetchOrders();
+          }
+        } catch (error) {
+          console.error('Update error:', error);
+          button.disabled = false;
+        }
+      }
+
+      async function printOrder(orderId) {
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        const order = previousOrders.find(o => Number(o.id) === Number(orderId));
+        if (order) {
+          const printArea = document.getElementById('print-area');
+          const total = order.total || order.items.reduce((sum, item) => sum + item.price, 0);
+          printArea.innerHTML = `
+            <div class="print-header">BSN Cloud Kitchen</div>
+            <div class="print-section">
+              <div class="print-section-title">Sipariş No: ${order.id}</div>
+            </div>
+            <div class="print-section">
+              <div class="print-section-title">Tür:</div>
+              <div class="print-item">${order.order_type === 'Takeout' ? 'Paket Servis' : 'Restorantta'}</div>
+            </div>
+            ${order.order_type === 'Dine In' && order.table_number ? `
+              <div class="print-section">
+                <div class="print-section-title">Masa No:</div>
+                <div class="print-item">${order.table_number}</div>
+              </div>
+            ` : ''}
+            ${order.order_type === 'Takeout' && order.takeout_option ? `
+              <div class="print-section">
+                <div class="print-section-title">Seçenek:</div>
+                <div class="print-item">${order.takeout_option === 'Delivery' ? 'Teslimat' : 'Restorandan Alım'}</div>
+              </div>
+              ${order.takeout_option === 'Delivery' ? `
+                <div class="print-section">
+                  <div class="print-section-title">Adres:</div>
+                  <div class="print-item">${order.address || 'N/A'}</div>
+                </div>
+                ${order.additional_info ? `
+                  <div class="print-section">
+                    <div class="print-section-title">Ek Bilgi:</div>
+                    <div class="print-item">${order.additional_info}</div>
+                  </div>
+                ` : ''}
+                <div class="print-section">
+                  <div class="print-section-title">Telefon:</div>
+                  <div class="print-item">${order.phone || 'N/A'}</div>
+                </div>
+                <div class="print-section">
+                  <div class="print-section-title">İsim:</div>
+                  <div class="print-item">${order.name || 'N/A'}</div>
+                </div>
+                <div class="print-section">
+                  <div class="print-section-title">Ödeme:</div>
+                  <div class="print-item">${order.payment_method === 'Cash' ? 'Nakit' : 'Kredi Kartı'}</div>
+                </div>
+              ` : ''}
+            ` : ''}
+            <div class="print-section">
+              <div class="print-section-title">Ürünler:</div>
+              ${order.items.map(item => `
+                <div class="print-item">${item.item} (${item.options || 'Seçim yok'}) - ${item.price}₺
+                  ${item.note ? `<br>Not: ${item.note}` : ''}
+                </div>
+              `).join('')}
+            </div>
+            <div class="print-section">
+              <div class="print-section-title">Tarih:</div>
+              <div class="print-item">${new Date(order.created_at).toLocaleString('tr-TR')}</div>
+            </div>
+            <div class="print-section">
+              <div class="print-section-title">Toplam:</div>
+              <div class="print-item">${total}₺</div>
+            </div>
+          `;
+          printArea.style.display = 'block';
+          window.print();
+          setTimeout(() => {
+            printArea.innerHTML = '';
+            printArea.style.display = 'none';
+          }, 200);
+        } else {
+          console.error(`Order ${orderId} not found for print`);
+        }
+      }
+    </script>
+  </body>
+</html>

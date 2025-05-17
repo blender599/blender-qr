@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSN Cloud Kitchen - Ürün Ekle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/App.css">  </head>
+  <body class="bg-gradient-to-br from-[#F8F1E9] to-[#EDEDED] font-sans">
+    <div class="container mx-auto p-4">
+      <header class="kitchen-header">
+        <h1 class="kitchen-title">Ürün Ekle</h1>
+        <button id="back-btn" class="kitchen-nav-button">Geri</button>
+      </header>
+      <div id="item-form" class="form-container">
+        <div class="flex space-x-6 flex-col md:flex-row">
+          <div class="w-full md:w-1/3">
+            <img id="item-photo" src="https://via.placeholder.com/150" alt="Ürün Fotoğrafı" class="form-image">
+            <input type="file" id="photo-upload" accept=".jpg" class="form-file-input">
+          </div>
+          <div class="w-full md:w-2/3 space-y-4">
+            <div>
+              <label class="form-label">Restoran *</label>
+              <select id="restaurant-select" class="form-select">
+                <option value="" disabled selected>Restoranlar yükleniyor...</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">İsim</label>
+              <input id="item-name" type="text" class="form-input">
+            </div>
+            <div>
+              <label class="form-label">Açıklama</label>
+              <textarea id="item-description" class="form-textarea" rows="3"></textarea>
+            </div>
+            <div>
+              <label class="form-label">Fiyat (₺)</label>
+              <input id="item-price" type="number" step="0.01" class="form-input">
+            </div>
+            <div>
+              <label class="form-label">Kategori</label>
+              <select id="category-select" class="form-select">
+                <option value="">Kategori Seç</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Mevcut</label>
+              <label class="toggle-container">
+                <input id="available-checkbox" type="checkbox" class="sr-only peer" checked>
+                <div class="toggle-slider"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="mt-6">
+          <label class="form-label mb-2">Opsiyonlar</label>
+          <div id="option-categories-list" class="space-y-2 mb-4"></div>
+          <div class="flex space-x-4">
+            <select id="option-category-select" class="form-select w-3/4">
+              <option value="">Opsiyon Seç</option>
+            </select>
+            <button id="add-option-category" class="form-button add">Ekle</button>
+          </div>
+        </div>
+        <div class="mt-6">
+          <label class="form-label mb-2">Alerjenler</label>
+          <div id="allergens-list" class="space-y-2 mb-4"></div>
+          <div class="flex space-x-4">
+            <select id="allergen-select" class="form-select w-3/4">
+              <option value="">Alerjen Seç</option>
+            </select>
+            <button id="add-allergen" class="form-button add">Ekle</button>
+          </div>
+        </div>
+        <div id="error" class="form-error hidden"></div>
+        <div class="flex justify-end space-x-4 mt-6">
+          <button id="save-btn" class="form-button">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let itemData = {
+        custom_id: '',
+        restaurant_id: null,
+        name: '',
+        description: '',
+        price: 0,
+        category: '',
+        option_categories: [],
+        available: true,
+        allergens: [],
+        imageBase64: null,
+        image_url: ''
+      };
+      let allRestaurants = [];
+      let allOptions = [];
+      let allAllergens = [];
+      let isLoadingRestaurants = true;
+      const token = localStorage.getItem('kitchenToken');
+
+      if (!token) {
+        console.error('add-item: No token in localStorage, redirecting to /kitchen.html');
+        window.location.href = '/kitchen.html';
+      } else {
+        console.log('add-item: Token found:', token.slice(0, 10) + '...');
+      }
+
+      document.getElementById('back-btn').addEventListener('click', () => {
+        window.location.href = '/kitchen.html?section=menu';
+      });
+
+      async function fetchRestaurantNames() {
+        try {
+          const response = await fetch('/.netlify/functions/get-restaurants', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const responseText = await response.text();
+          if (!response.ok) throw new Error(`Restaurants fetch failed: ${response.status}`);
+          const restaurantsData = JSON.parse(responseText);
+          
+          allRestaurants = restaurantsData.data;
+
+          const restaurantSelect = document.getElementById('restaurant-select');
+          if (allRestaurants.length === 0) {
+            restaurantSelect.innerHTML = '<option value="" disabled selected>Restoran bulunamadı</option>';
+            showError('Hiç restoran bulunamadı, lütfen bir restoran ekleyin.');
+          } else {
+            restaurantSelect.innerHTML = '<option value="" disabled selected>Restoran Seç</option>' +
+              allRestaurants.map(r => `<option value="${r.restaurant_id}">${r.name}</option>`).join('');
+          }
+        } catch (error) {
+          console.error('Fetch error:', error);
+          document.getElementById('restaurant-select').innerHTML = `<option value="">Restoranlar yüklenemedi: ${error.message}</option>`;
+          throw error;
+        }
+      }
+
+      async function fetchData() {
+        try {
+          isLoadingRestaurants = true;
+          console.log('add-item: Fetching restaurant names, options, and allergens...');
+          const [restaurantsResponse, optionsResponse, allergensResponse] = await Promise.all([
+            fetchRestaurantNames(),
+            fetch('/.netlify/functions/get-options', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }).then(response => {
+              if (!response.ok) {
+                console.error('add-item: Options fetch failed:', response.status);
+                throw new Error('Seçenek kategorileri yüklenemedi');
+              }
+              return response.json();
+            }),
+            fetch('/.netlify/functions/get-allergens', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }).then(response => {
+              if (!response.ok) {
+                console.error('add-item: Allergens fetch failed:', response.status);
+                throw new Error('Alerjenler yüklenemedi');
+              }
+              return response.json();
+            })
+          ]);
+
+          allOptions = optionsResponse.data;
+          allAllergens = allergensResponse.data;
+
+          console.log('add-item: Fetched restaurants:', allRestaurants);
+          console.log('add-item: Fetched options:', allOptions);
+          console.log('add-item: Fetched allergens:', allAllergens);
+
+          const optionSelect = document.getElementById('option-category-select');
+          optionSelect.innerHTML = '<option value="">Seçenek Kategorisi Seç</option>' +
+            allOptions.map(opt => `<option value="${opt.id}">${opt.name}</option>`).join('');
+
+          const allergenSelect = document.getElementById('allergen-select');
+          allergenSelect.innerHTML = '<option value="">Alerjen Seç</option>' +
+            allAllergens.map(allergen => `<option value="${allergen.id}">${allergen.name}</option>`).join('');
+
+          const restaurantSelect = document.getElementById('restaurant-select');
+          restaurantSelect.addEventListener('change', updateCategoryDropdown);
+          isLoadingRestaurants = false;
+        } catch (error) {
+          console.error('add-item: fetchData error:', error);
+          showError('Veriler yüklenemedi: ' + error.message);
+          const restaurantSelect = document.getElementById('restaurant-select');
+          restaurantSelect.innerHTML = '<option value="" disabled selected>Restoranlar yüklenemedi</option>';
+          isLoadingRestaurants = false;
+        }
+      }
+
+      function updateCategoryDropdown() {
+        const restaurantId = document.getElementById('restaurant-select').value;
+        const categorySelect = document.getElementById('category-select');
+        const restaurantSelect = document.getElementById('restaurant-select');
+        restaurantSelect.classList.remove('error-border');
+        if (!restaurantId) {
+          categorySelect.innerHTML = '<option value="">Kategori Seç</option>';
+          itemData.category = '';
+          itemData.restaurant_id = null;
+          return;
+        }
+        const restaurant = allRestaurants.find(r => Number(r.restaurant_id) === Number(restaurantId));
+        const categories = restaurant?.categories || [];
+        categorySelect.innerHTML = '<option value="">Kategori Seç</option>' +
+          categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+        itemData.restaurant_id = restaurantId ? Number(restaurantId) : null;
+        itemData.category = '';
+      }
+
+      function renderOptionCategories() {
+        const optionCategoriesList = document.getElementById('option-categories-list');
+        optionCategoriesList.innerHTML = itemData.option_categories.map(optId => {
+          const option = allOptions.find(opt => opt.id === optId);
+          return option ? `
+            <div class="flex justify-between items-center form-list-item">
+              <span>${option.name}</span>
+              <button class="form-button delete" onclick="deleteOptionCategory('${optId}')">Sil</button>
+            </div>
+          ` : `
+            <div class="flex justify-between items-center form-list-item">
+              <span>[Bilinmeyen: ${optId}]</span>
+              <button class="form-button delete" onclick="deleteOptionCategory('${optId}')">Sil</button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function renderAllergens() {
+        const allergensList = document.getElementById('allergens-list');
+        allergensList.innerHTML = itemData.allergens.map(allergenId => {
+          const allergen = allAllergens.find(a => a.id === allergenId);
+          return allergen ? `
+            <div class="flex justify-between items-center form-list-item">
+              <div class="flex items-center space-x-2">
+                <img src="${allergen.symbol_url}" alt="${allergen.name}" class="w-6 h-6 object-contain">
+                <span>${allergen.name}</span>
+              </div>
+              <button class="form-button delete" onclick="deleteAllergen('${allergenId}')">Sil</button>
+            </div>
+          ` : `
+            <div class="flex justify-between items-center form-list-item">
+              <span>[Bilinmeyen: ${allergenId}]</span>
+              <button class="form-button delete" onclick="deleteAllergen('${allergenId}')">Sil</button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function deleteOptionCategory(optId) {
+        itemData.option_categories = itemData.option_categories.filter(id => id !== optId);
+        renderOptionCategories();
+      }
+
+      function deleteAllergen(allergenId) {
+        itemData.allergens = itemData.allergens.filter(id => id !== allergenId);
+        renderAllergens();
+      }
+
+      document.getElementById('add-option-category').addEventListener('click', () => {
+        const optionId = document.getElementById('option-category-select').value;
+        if (optionId && !itemData.option_categories.includes(optionId)) {
+          itemData.option_categories.push(optionId);
+          renderOptionCategories();
+        }
+      });
+
+      document.getElementById('add-allergen').addEventListener('click', () => {
+        const allergenId = document.getElementById('allergen-select').value;
+        if (allergenId && !itemData.allergens.includes(allergenId)) {
+          itemData.allergens.push(allergenId);
+          renderAllergens();
+        }
+      });
+
+      document.getElementById('photo-upload').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file && file.type === 'image/jpeg') {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            document.getElementById('item-photo').src = event.target.result;
+            itemData.imageBase64 = event.target.result;
+            document.getElementById('photo-upload').classList.remove('error-border');
+          };
+          reader.readAsDataURL(file);
+        } else {
+          showError('Lütfen bir .jpg dosyası seçin!');
+          document.getElementById('photo-upload').classList.add('error-border');
+        }
+      });
+
+      document.getElementById('save-btn').addEventListener('click', async () => {
+        itemData.name = document.getElementById('item-name').value;
+        itemData.description = document.getElementById('item-description').value;
+        itemData.price = parseFloat(document.getElementById('item-price').value);
+        itemData.category = document.getElementById('category-select').value;
+        itemData.available = document.getElementById('available-checkbox').checked;
+
+        const restaurantSelect = document.getElementById('restaurant-select');
+        const photoUpload = document.getElementById('photo-upload');
+
+        if (!itemData.restaurant_id) {
+          showError('Lütfen bir restoran seçin!');
+          restaurantSelect.classList.add('error-border');
+          return;
+        }
+        if (!itemData.name) {
+          showError('Ürün adı gerekli!');
+          document.getElementById('item-name').classList.add('error-border');
+          return;
+        }
+        if (isNaN(itemData.price) || itemData.price < 0) {
+          showError('Fiyat geçerli bir sayı olmalı!');
+          document.getElementById('item-price').classList.add('error-border');
+          return;
+        }
+        if (!itemData.category) {
+          showError('Lütfen bir kategori seçin!');
+          document.getElementById('category-select').classList.add('error-border');
+          return;
+        }
+        if (!itemData.imageBase64) {
+          showError('Lütfen bir ürün fotoğrafı yükleyin (.jpg)!');
+          photoUpload.classList.add('error-border');
+          return;
+        }
+
+        // Generate custom_id with retry on duplicate
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+          itemData.custom_id = `sl-p-${Math.random().toString(36).substr(2, 8)}`;
+          try {
+            await saveItem();
+            return;
+          } catch (error) {
+            if (error.message.includes('Duplicate custom_id') && attempts < maxAttempts - 1) {
+              console.warn('add-item: Duplicate custom_id detected, retrying...');
+              attempts++;
+              continue;
+            }
+            throw error;
+          }
+        }
+        showError('Ürün kaydedilemedi: Benzersiz kimlik oluşturulamadı');
+      });
+
+      async function saveItem() {
+        const saveBtn = document.getElementById('save-btn');
+        saveBtn.textContent = 'Kaydediliyor...';
+        saveBtn.disabled = true;
+        try {
+          const response = await fetch('/.netlify/functions/add-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(itemData)
+          });
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error('add-item: Error response:', errorData);
+            throw new Error(errorData.error || 'Bilinmeyen bir hata oluştu');
+          }
+          const result = await response.json();
+          console.log('add-item: Item added successfully:', result.data);
+          window.location.href = '/kitchen.html?section=menu';
+        } catch (error) {
+          console.error('add-item: Save error:', error);
+          showError(`Kaydetme başarısız: ${error.message}`);
+          throw error;
+        } finally {
+          saveBtn.textContent = 'Kaydet';
+          saveBtn.disabled = false;
+        }
+      }
+
+      function showError(message) {
+        const errorDiv = document.getElementById('error');
+        const currentErrors = errorDiv.textContent.split('\n').filter(e => e);
+        if (!currentErrors.includes(message)) {
+          currentErrors.push(message);
+          errorDiv.textContent = currentErrors.join('\n');
+          errorDiv.classList.remove('hidden');
+        }
+      }
+
+      fetchData();
+    </script>
+  </body>
+</html>
