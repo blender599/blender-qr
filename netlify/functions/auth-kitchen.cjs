@@ -42,7 +42,7 @@ exports.handler = async (event) => {
     }
 
     const { data: sessionData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: `${username}@yourdomain.com`, // e.g., ozanbasaran@yourdomain.com
+      email: `${username}@gmail.com`, // e.g., ozanbasaran@yourdomain.com
       password: KITCHEN_PASSWORD,
     });
 
