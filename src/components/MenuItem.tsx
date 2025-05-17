@@ -18,7 +18,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({ item, addToCart, allergens }
 
   return (
     <div className="menu-item">
-      <div className="menu-item-left">
+      <img
+        src={item.image_url || 'https://via.placeholder.com/150'}
+        alt={item.name}
+        className="menu-item-image"
+        onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/150')}
+      />
+      <div className="menu-item-content">
         <h3 className="menu-item-name">{item.name}</h3>
         <p className="menu-item-description">{item.description}</p>
         {itemAllergens.length > 0 && (
@@ -39,21 +45,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({ item, addToCart, allergens }
             ))}
           </div>
         )}
-      </div>
-      <div className="menu-item-right">
-        <img
-          src={item.image_url || 'https://via.placeholder.com/150'}
-          alt={item.name}
-          className="menu-item-image"
-          onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/150')}
-        />
-        <p className="menu-item-price">{item.price.toFixed(2)}₺</p>
-        <button
-          onClick={() => addToCart(item.name, item.price)}
-          className="menu-item-button"
-        >
-          Siparişe Ekle
-        </button>
+        <div className="menu-item-footer">
+          <p className="menu-item-price">{item.price.toFixed(2)}₺</p>
+          <button
+            onClick={() => addToCart(item.name, item.price)}
+            className="menu-item-button"
+          >
+            +
+          </button>
+        </div>
       </div>
     </div>
   );
