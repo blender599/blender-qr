@@ -2,14 +2,16 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { v2: cloudinary } = require('cloudinary');
 
+// Config
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_KEY = process.env.VITE_SUPABASE_SERVICE_KEY;
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('Missing Supabase env vars—check VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY');
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY) {
+  throw new Error('Missing Supabase env vars—check VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_SUPABASE_SERVICE_KEY');
 }
 if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
   console.warn('add-restaurant: Missing Cloudinary env vars. Image uploads will fail.');
@@ -27,7 +29,8 @@ if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
   console.warn('add-restaurant: Cloudinary NOT configured due to missing env vars.');
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Admin client for token verification (bypasses RLS)
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -52,7 +55,7 @@ exports.handler = async (event) => {
   let userId;
   try {
     console.log('add-restaurant: Verifying token with supabase.auth.getUser...');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError) {
       console.error('add-restaurant: Supabase auth error during getUser:', userError);
       throw userError;
@@ -106,10 +109,12 @@ exports.handler = async (event) => {
       throw new Error('All categories must be non-empty strings');
     }
 
-    // Fetch all restaurants to determine the next restaurant_id
+    // Create a client for the authenticated user (using anon key + user token)
     const userSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
+
+    // Fetch all restaurants to determine the next restaurant_id
     const { data: existingRestaurants, error: fetchError } = await userSupabase
       .from('restaurants')
       .select('restaurant_id');

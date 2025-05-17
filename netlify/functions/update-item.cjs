@@ -128,9 +128,8 @@ exports.handler = async (event) => {
     if (image_url !== undefined) {
       updateFields.image_url = image_url;
     }
-    updateFields.updated_at = new Date().toISOString();
 
-    if (Object.keys(updateFields).length === 1 && updateFields.updated_at) {
+    if (Object.keys(updateFields).length === 1) {
       console.warn('update-item: No valid fields provided for update beyond updated_at.');
       return {
         statusCode: 400,

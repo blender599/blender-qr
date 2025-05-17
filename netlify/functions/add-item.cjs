@@ -170,7 +170,6 @@ exports.handler = async (event) => {
       available: available ?? true,
       allergens: Array.isArray(allergens) ? allergens : [],
       image_url,
-      updated_at: new Date().toISOString(),
     };
     console.log('add-item: Fields to insert:', itemFields);
 
