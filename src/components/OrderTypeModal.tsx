@@ -15,7 +15,7 @@ export default function OrderTypeModal({ onSelect, onClose }: OrderTypeModalProp
           <div className="modal-button-group">
             <button
               onClick={() => onSelect('Takeout')}
-              className="modal-button primary hidden-takeout" 
+              className="modal-button primary" 
             >
               Paket Servis
             </button>

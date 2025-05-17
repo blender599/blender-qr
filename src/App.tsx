@@ -514,12 +514,12 @@ function App() {
     setTableNumber('');
   };
 
-  const handleTakeoutOptionSelect = (option: 'Delivery' | 'Pickup') => {
+  const handleTakeoutOptionSelect = (option: 'Delivery') => { // Changed to only accept 'Delivery'
     setTakeoutOption(option);
     setShowTakeoutOptionModal(false);
     setModalError(null);
 
-    if (option === 'Pickup') {
+    if (option === 'Delivery') {
       setDeliveryDetails(prev => ({ ...prev, address: '', phone: '', paymentMethod: 'Cash', additionalInfo: '' }));
       setDeliveryLocation(null);
     }
@@ -634,7 +634,7 @@ function App() {
       const data = JSON.parse(responseText);
       setOrderConfirmation({
         orderNumber: data.orderId,
-        message: `${orderDetails.order_type === 'Takeout' ? 'Paket servis' : 'Restorantta'} siparişiniz başarıyla oluşturuldu! Sipariş numaranız:`,
+        message: `${orderDetails.order_type === 'Takeout' ? 'Paket servis' : 'Barda'} siparişiniz başarıyla oluşturuldu! Sipariş numaranız:`,
       });
 
       setCart([]);
@@ -926,12 +926,6 @@ function App() {
                   className="modal-button primary"
                 >
                   Teslimat
-                </button>
-                <button
-                  onClick={() => handleTakeoutOptionSelect('Pickup')}
-                  className="modal-button primary"
-                >
-                  Restorandan Alım
                 </button>
                 <button
                   onClick={() => { setShowTakeoutOptionModal(false); setTakeoutOption(null); setModalError(null); }}
