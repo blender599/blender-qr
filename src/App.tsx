@@ -827,7 +827,7 @@ function App() {
       {/* Header component */}
       <header className={`header ${isHeaderVisible ? '' : 'hidden'}`}>
         <div className="header-content">
-          <h1 className="header-title">BSN Cloud Kitchen</h1>
+          <h1 className="header-title"> Blender X FitKase </h1>
           <div className="header-times">
             <p>Çalışma Saatleri: {currentDay} ({displayTimes})</p>
           </div>
@@ -1209,7 +1209,7 @@ function App() {
 
       {/* Footer */}
       <footer className="footer">
-        <p className="footer-text">Afiyet Olsun</p>
+        <p className="footer-text">Sporla Kalın</p>
       </footer>
 
       {/* Options Modal - Conditionally rendered based on selectedItem */}

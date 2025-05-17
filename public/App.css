@@ -1164,7 +1164,9 @@ input[type="checkbox"]:checked + .toggle-slider::before {
   90% { opacity: 1; }
   100% { opacity: 0; }
 }
-
+.hidden-takeout {
+  display: none; /* Completely hides the button */
+}
 /* Additional Form Styles for working-hours.html */
 .form-input-time {
   padding: 8px;

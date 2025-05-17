@@ -1133,7 +1133,9 @@ input[type="checkbox"]:checked + .toggle-slider::before {
   cursor: not-allowed;
   box-shadow: none;
 }
-
+.hidden-takeout {
+  display: none; /* Completely hides the button */
+}
 .error-border {
   border-color: var(--color-error) !important;
 }
